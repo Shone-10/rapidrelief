@@ -190,6 +190,7 @@
       <div>
         <label for="provider">AI provider</label>
         <select id="provider">
+          <option value="groq">Groq (llama-3.3-70b, free)</option>
           <option value="openai">OpenAI (gpt-4o-mini)</option>
           <option value="anthropic">Anthropic (claude-3-5-haiku)</option>
         </select>
@@ -270,43 +271,15 @@ const SYS_PROMPT = `You are a disaster-response triage assistant. Given a raw, u
 }
 Urgency guide: critical = immediate life threat (trapped, drowning, severe injury, fire spreading); high = serious risk if not addressed within hours; medium = significant hardship, not immediately life-threatening; low = general need, no urgency.`;
 
-async function callOpenAI(apiKey, text){
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+async function callProxy(provider, apiKey, text){
+  const res = await fetch('/api/generate', {
     method: 'POST',
-    headers: {'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        {role:'system', content: SYS_PROMPT},
-        {role:'user', content: text}
-      ],
-      temperature: 0.2
-    })
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ provider, apiKey, text })
   });
-  if(!res.ok){ throw new Error('OpenAI API error: ' + res.status + ' ' + (await res.text())); }
   const data = await res.json();
-  return data.choices[0].message.content;
-}
-
-async function callAnthropic(apiKey, text){
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type':'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body: JSON.stringify({
-      model:'claude-3-5-haiku-20241022',
-      max_tokens: 500,
-      system: SYS_PROMPT,
-      messages: [{role:'user', content: text}]
-    })
-  });
-  if(!res.ok){ throw new Error('Anthropic API error: ' + res.status + ' ' + (await res.text())); }
-  const data = await res.json();
-  return data.content[0].text;
+  if(!res.ok){ throw new Error(data.error || ('Request failed: ' + res.status)); }
+  return data.content;
 }
 
 function urgencyRank(u){
@@ -383,9 +356,7 @@ submitBtn.addEventListener('click', async () => {
   setStatus('Analyzing and triaging...');
 
   try{
-    let raw;
-    if(provider === 'openai'){ raw = await callOpenAI(apiKey, rawText); }
-    else{ raw = await callAnthropic(apiKey, rawText); }
+    let raw = await callProxy(provider, apiKey, rawText);
 
     let cleaned = raw.trim().replace(/^```json/,'').replace(/^```/,'').replace(/```$/,'').trim();
     const parsed = JSON.parse(cleaned);
